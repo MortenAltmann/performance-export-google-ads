@@ -1,0 +1,111 @@
+function main() {
+  
+  //template for Google Sheet: https://docs.google.com/spreadsheets/d/1AnHUQMAgUyfhybm2YZeY-m2KkXMU_VXTPJLbvfMpq7I/edit#gid=283682410
+  //Make a copy of the Google Sheet
+  //Set URL to the Sheet you want to export to
+  let sheetUrl = "INSERT_URL";
+  //Set the start date - The format has to be yyyy-mm-dd
+  let startDate = "2023-01-01";
+  //choose the metric you want to sort the data by (conversions, clikcs, impressions, cost_micros, conversions_value)
+  var orderBy = "conversions";
+  //var endDate = "2023-08-01";
+  //This takes new newest date
+  var endDate = new Date();
+  //This changes the format for the date from today to yyyy-MM-dd
+  var endRange = Utilities.formatDate(endDate, 'Europe/Copenhagen', 'yyyy-MM-dd'); // Corrected time zone and date format
+
+  
+  var dateRange = "'" + startDate + "'" + ' AND ' + "'" + endRange + "'"; // Renamed to avoid confusion with reserved word "Date"
+  
+  
+  
+  //Change only if your Sheet name isn't the same
+  
+  var performanceMaxSheet = 'Performance Max Import'
+  var targetCpaSheet = 'Target CPA Import'
+  var targetRoasSheet = 'Target ROAS Import'
+  
+  //Please DO NOT TOUCH the next part, unless you know what you are doing
+  
+  var campaignStatus = 'CampaignStatus = ENABLED';
+  var costs = 'Cost > 0';
+  var filter = campaignStatus + ' AND ' + costs; // Improved filter syntax
+  
+  var ss = SpreadsheetApp.openByUrl(sheetUrl);
+  var sheet1 = ss.getSheetByName(performanceMaxSheet);
+  var sheet2 = ss.getSheetByName(targetCpaSheet);
+  var sheet3 = ss.getSheetByName(targetRoasSheet);
+  
+  //Clear The Sheets
+  sheet1.clear();
+  sheet2.clear();
+  sheet3.clear();
+  
+  var targetCpa = AdsApp.report(
+    `
+    SELECT
+    campaign.name,
+    ad_group.name,
+    ad_group.effective_target_cpa_micros,
+    metrics.search_impression_share,
+    metrics.clicks,
+    metrics.cost_micros,
+    metrics.impressions,
+    metrics.conversions,
+    metrics.conversions_value
+
+    FROM ad_group
+    WHERE
+    segments.date BETWEEN ${dateRange} AND campaign.status ='ENABLED' And campaign.advertising_channel_type ='SEARCH' AND campaign.bidding_strategy_type != 'MAXIMIZE_CONVERSION_VALUE' AND campaign.bidding_strategy_type != 'MANUAL_CPC' AND campaign.bidding_strategy_type != 'TARGET_ROAS'
+    ORDER BY metrics.${orderBy} DESC
+    `
+  );
+  
+  targetCpa.exportToSheet(ss.getSheetByName(targetCpaSheet));
+  
+  var targetRoas = AdsApp.report(
+    `
+    SELECT
+    campaign.name,
+    campaign.maximize_conversion_value.target_roas,
+    metrics.search_impression_share,
+    metrics.clicks,
+    metrics.cost_micros,
+    metrics.impressions,
+    metrics.conversions,
+    metrics.conversions_value
+
+    FROM campaign
+    WHERE
+    segments.date BETWEEN ${dateRange} AND campaign.status ='ENABLED' And campaign.advertising_channel_type ='SEARCH' AND campaign.bidding_strategy_type = 'MAXIMIZE_CONVERSION_VALUE' AND campaign.maximize_conversion_value.target_roas IS NOT NULL
+    ORDER BY metrics.${orderBy} DESC
+    `
+  );
+  
+  targetRoas.exportToSheet(ss.getSheetByName(targetRoasSheet));
+
+  var performance_max = AdsApp.report(
+    `
+    SELECT
+    campaign.name,
+    campaign.id,
+    campaign.bidding_strategy_type,
+    campaign.target_roas.target_roas,
+    campaign.target_cpa.target_cpa_micros,
+    campaign.maximize_conversion_value.target_roas,
+    campaign.maximize_conversions.target_cpa_micros,
+    metrics.clicks,
+    metrics.cost_micros,
+    metrics.impressions,
+    metrics.conversions,
+    metrics.conversions_value
+
+    FROM campaign
+    WHERE
+    segments.date BETWEEN ${dateRange} AND campaign.status ='ENABLED' And campaign.advertising_channel_type ='PERFORMANCE_MAX'
+    ORDER BY metrics.${orderBy} DESC
+    `
+  );
+  
+  performance_max.exportToSheet(ss.getSheetByName(performanceMaxSheet));
+}
